@@ -48,7 +48,6 @@ export default function ChatScreen() {
 
   useEffect(() => {
     initializeChat();
-    checkReviewPrompt();
   }, []);
 
   // Reload chat when screen comes back into focus (e.g., from settings)
@@ -79,72 +78,7 @@ export default function ChatScreen() {
     }, [currentChatId])
   );
 
-  const checkReviewPrompt = async () => {
-    try {
-      const reviewShown = await AsyncStorage.getItem("reviewPromptShown");
-      const reviewDeclined = await AsyncStorage.getItem("reviewDeclined");
-
-      const hasShownReview = reviewShown === "true";
-      const hasDeclinedReview = reviewDeclined === "true";
-
-      // Show review prompt after 20 seconds if not shown or declined before
-      if (!hasShownReview && !hasDeclinedReview) {
-        setTimeout(() => {
-          showReviewPrompt();
-        }, 20000); // Show after 20 seconds
-      }
-    } catch (error) {
-      console.error("Error checking review prompt:", error);
-    }
-  };
-
-  const showReviewPrompt = async () => {
-    const { StoreReview } = await import("expo-store-review");
-
-    Alert.alert("Tətbiqi bəyəndinizmi?", "", [
-      {
-        text: "Xeyr",
-        style: "cancel",
-        onPress: () => {
-          // Ask for feedback when user says no
-          Alert.alert(
-            "Rəy bildirin",
-            "Tətbiqi necə yaxşılaşdıra bilərik? Rəyinizi yazın:",
-            [
-              { text: "Ləğv et", style: "cancel" },
-              {
-                text: "Rəy göndər",
-                onPress: async () => {
-                  // Mark as declined so we don't show again
-                  await AsyncStorage.setItem("reviewDeclined", "true");
-                  Alert.alert("Təşəkkürlər", "Rəyiniz üçün təşəkkürlər!");
-                },
-              },
-            ]
-          );
-        },
-      },
-      {
-        text: "Bəli",
-        onPress: async () => {
-          try {
-            const isAvailable = await StoreReview.isAvailableAsync();
-            if (isAvailable) {
-              await StoreReview.requestReview();
-            } else {
-              // Fallback to App Store URL
-              const appStoreUrl = "https://apps.apple.com/app/idYOUR_APP_ID"; // Replace with actual App Store URL
-              const { Linking } = await import("react-native");
-              await Linking.openURL(appStoreUrl);
-            }
-            await AsyncStorage.setItem("reviewPromptShown", "true");
-          } catch (error) {
-            console.error("Error opening review:", error);
-          }
-        },
-      },
-    ]);
-  };
+  // Review prompt is now only in settings.tsx
 
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive

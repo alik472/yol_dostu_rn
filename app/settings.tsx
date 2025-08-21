@@ -70,23 +70,9 @@ export default function SettingsScreen() {
       {
         text: "Xeyr",
         style: "cancel",
-        onPress: () => {
-          // Ask for feedback when user says no
-          Alert.alert(
-            "Rəy bildirin",
-            "Tətbiqi necə yaxşılaşdıra bilərik? Rəyinizi yazın:",
-            [
-              { text: "Ləğv et", style: "cancel" },
-              {
-                text: "Rəy göndər",
-                onPress: async () => {
-                  // Mark as declined so we don't show again
-                  await AsyncStorage.setItem("reviewDeclined", "true");
-                  Alert.alert("Təşəkkürlər", "Rəyiniz üçün təşəkkürlər!");
-                },
-              },
-            ]
-          );
+        onPress: async () => {
+          // Just mark as declined, no secondary prompt
+          await AsyncStorage.setItem("reviewDeclined", "true");
         },
       },
       {

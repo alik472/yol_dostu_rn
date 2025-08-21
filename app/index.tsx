@@ -1,0 +1,708 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import "react-native-get-random-values";
+import { v4 as uuidv4 } from "uuid";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  isError?: boolean;
+}
+
+interface Chat {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const API_BASE_URL = "https://background-xmocz.ondigitalocean.app";
+const API_TOKEN = "yol8xkj9p0qwertyuiopasdfghjklzxc";
+
+export default function ChatScreen() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    initializeChat();
+    checkReviewPrompt();
+  }, []);
+
+  // Reload chat when screen comes back into focus (e.g., from settings)
+  useFocusEffect(
+    useCallback(() => {
+      const reloadActiveChat = async () => {
+        try {
+          const activeChatId = await AsyncStorage.getItem("activeChatId");
+          if (activeChatId && activeChatId !== currentChatId) {
+            const chatData = await AsyncStorage.getItem(`chat_${activeChatId}`);
+            if (chatData) {
+              const chat: Chat = JSON.parse(chatData);
+              // Ensure timestamps are Date objects
+              const messagesWithDates = chat.messages.map((msg) => ({
+                ...msg,
+                timestamp: new Date(msg.timestamp),
+              }));
+              setMessages(messagesWithDates);
+              setCurrentChatId(activeChatId);
+            }
+          }
+        } catch (error) {
+          console.error("Error reloading active chat:", error);
+        }
+      };
+
+      reloadActiveChat();
+    }, [currentChatId])
+  );
+
+  const checkReviewPrompt = async () => {
+    try {
+      const reviewShown = await AsyncStorage.getItem("reviewPromptShown");
+      const reviewDeclined = await AsyncStorage.getItem("reviewDeclined");
+
+      const hasShownReview = reviewShown === "true";
+      const hasDeclinedReview = reviewDeclined === "true";
+
+      // Show review prompt after 20 seconds if not shown or declined before
+      if (!hasShownReview && !hasDeclinedReview) {
+        setTimeout(() => {
+          showReviewPrompt();
+        }, 20000); // Show after 20 seconds
+      }
+    } catch (error) {
+      console.error("Error checking review prompt:", error);
+    }
+  };
+
+  const showReviewPrompt = async () => {
+    const { StoreReview } = await import("expo-store-review");
+
+    Alert.alert("Tətbiqi bəyəndinizmi?", "", [
+      {
+        text: "Xeyr",
+        style: "cancel",
+        onPress: () => {
+          // Ask for feedback when user says no
+          Alert.alert(
+            "Rəy bildirin",
+            "Tətbiqi necə yaxşılaşdıra bilərik? Rəyinizi yazın:",
+            [
+              { text: "Ləğv et", style: "cancel" },
+              {
+                text: "Rəy göndər",
+                onPress: async () => {
+                  // Mark as declined so we don't show again
+                  await AsyncStorage.setItem("reviewDeclined", "true");
+                  Alert.alert("Təşəkkürlər", "Rəyiniz üçün təşəkkürlər!");
+                },
+              },
+            ]
+          );
+        },
+      },
+      {
+        text: "Bəli",
+        onPress: async () => {
+          try {
+            const isAvailable = await StoreReview.isAvailableAsync();
+            if (isAvailable) {
+              await StoreReview.requestReview();
+            } else {
+              // Fallback to App Store URL
+              const appStoreUrl = "https://apps.apple.com/app/idYOUR_APP_ID"; // Replace with actual App Store URL
+              const { Linking } = await import("react-native");
+              await Linking.openURL(appStoreUrl);
+            }
+            await AsyncStorage.setItem("reviewPromptShown", "true");
+          } catch (error) {
+            console.error("Error opening review:", error);
+          }
+        },
+      },
+    ]);
+  };
+
+  useEffect(() => {
+    // Auto-scroll to bottom when new messages arrive
+    if (scrollViewRef.current) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  const initializeChat = async () => {
+    try {
+      // Check if there's an active chat
+      const activeChatId = await AsyncStorage.getItem("activeChatId");
+      if (activeChatId) {
+        const chatData = await AsyncStorage.getItem(`chat_${activeChatId}`);
+        if (chatData) {
+          const chat: Chat = JSON.parse(chatData);
+          // Ensure timestamps are Date objects
+          const messagesWithDates = chat.messages.map((msg) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          }));
+          setMessages(messagesWithDates);
+          setCurrentChatId(activeChatId);
+          return;
+        }
+      }
+
+      // Create new chat with welcome message
+      await createNewChat();
+    } catch (error) {
+      console.error("Error initializing chat:", error);
+      await createNewChat();
+    }
+  };
+
+  const createNewChat = async () => {
+    const chatId = uuidv4();
+    const welcomeMessage: Message = {
+      id: uuidv4(),
+      role: "assistant",
+      content:
+        "Salam! Mən Yol Dostu botuyam. Azərbaycan Respublikasının yol hərəkəti qaydaları, cərimələr və digər yol məsələləri haqqında suallarınızı cavablandıra bilərəm. Sualınızı yazın!",
+      timestamp: new Date(),
+    };
+
+    const newChat: Chat = {
+      id: chatId,
+      title: "Yeni söhbət",
+      messages: [welcomeMessage],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    setMessages([welcomeMessage]);
+    setCurrentChatId(chatId);
+
+    // Save to storage
+    await AsyncStorage.setItem(`chat_${chatId}`, JSON.stringify(newChat));
+    await AsyncStorage.setItem("activeChatId", chatId);
+    await addChatToHistory(newChat);
+  };
+
+  const addChatToHistory = async (chat: Chat) => {
+    try {
+      const existingChats = await AsyncStorage.getItem("chatHistory");
+      const chatHistory: Chat[] = existingChats
+        ? JSON.parse(existingChats)
+        : [];
+
+      // Check if chat already exists
+      const existingIndex = chatHistory.findIndex((c) => c.id === chat.id);
+      if (existingIndex >= 0) {
+        chatHistory[existingIndex] = chat;
+      } else {
+        chatHistory.unshift(chat); // Add to beginning
+      }
+
+      // Keep only last 50 chats
+      const limitedHistory = chatHistory.slice(0, 50);
+      await AsyncStorage.setItem("chatHistory", JSON.stringify(limitedHistory));
+    } catch (error) {
+      console.error("Error saving chat to history:", error);
+    }
+  };
+
+  const sendMessage = async (messageText: string, isRetry: boolean = false) => {
+    console.log("sendMessage called with:", messageText);
+    if (!messageText.trim() || isLoading) {
+      console.log("Message blocked - empty text or loading");
+      return;
+    }
+
+    // Haptic feedback for send action
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const userMessage: Message = {
+      id: uuidv4(),
+      role: "user",
+      content: messageText.trim(),
+      timestamp: new Date(),
+    };
+
+    // Add user message immediately
+    if (!isRetry) {
+      setMessages((prev) => [...prev, userMessage]);
+      setInputText("");
+    }
+
+    setIsLoading(true);
+
+    try {
+      // Prepare conversation history (last 6 messages for context)
+      const conversationHistory = messages.slice(-6).map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      const response = await fetch(`${API_BASE_URL}/yoldostu/chat`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: messageText.trim(),
+          conversation_history: conversationHistory,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.status === "success" && data.data?.response) {
+        const assistantMessage: Message = {
+          id: uuidv4(),
+          role: "assistant",
+          content: data.data.response,
+          timestamp: new Date(),
+        };
+
+        const updatedMessages = isRetry
+          ? [...messages.slice(0, -1), assistantMessage] // Replace error message
+          : [...messages, userMessage, assistantMessage];
+
+        setMessages(updatedMessages);
+        setRetryCount(0);
+
+        // Save updated chat
+        if (currentChatId) {
+          await saveChatToStorage(updatedMessages);
+        }
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+
+      const errorMessage: Message = {
+        id: uuidv4(),
+        role: "assistant",
+        content:
+          "Üzr istəyirəm, hal-hazırda cavab verə bilmirəm. Zəhmət olmasa bir az sonra yenidən cəhd edin.",
+        timestamp: new Date(),
+        isError: true,
+      };
+
+      if (isRetry) {
+        setMessages((prev) => [...prev.slice(0, -1), errorMessage]);
+      } else {
+        setMessages((prev) => [...prev, userMessage, errorMessage]);
+      }
+
+      setRetryCount((prev) => prev + 1);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveChatToStorage = async (updatedMessages: Message[]) => {
+    if (!currentChatId) return;
+
+    try {
+      const chatData = await AsyncStorage.getItem(`chat_${currentChatId}`);
+      if (chatData) {
+        const chat: Chat = JSON.parse(chatData);
+
+        // Update title based on first user message
+        const firstUserMessage = updatedMessages.find((m) => m.role === "user");
+        if (firstUserMessage && chat.title === "Yeni söhbət") {
+          chat.title =
+            firstUserMessage.content.slice(0, 30) +
+            (firstUserMessage.content.length > 30 ? "..." : "");
+        }
+
+        chat.messages = updatedMessages;
+        chat.updatedAt = new Date();
+
+        await AsyncStorage.setItem(
+          `chat_${currentChatId}`,
+          JSON.stringify(chat)
+        );
+        await addChatToHistory(chat);
+      }
+    } catch (error) {
+      console.error("Error saving chat:", error);
+    }
+  };
+
+  const retryLastMessage = () => {
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "user");
+    if (lastUserMessage && !isLoading) {
+      sendMessage(lastUserMessage.content, true);
+    }
+  };
+
+  const startNewChat = async () => {
+    // Haptic feedback for new chat action
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    Alert.alert(
+      "Yeni Söhbət",
+      "Yeni söhbət başlatmaq istədiyinizə əminsiniz?",
+      [
+        { text: "Ləğv et", style: "cancel" },
+        {
+          text: "Bəli",
+          onPress: async () => {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await createNewChat();
+          },
+        },
+      ]
+    );
+  };
+
+  const renderMessage = (message: Message, index: number) => {
+    const isUser = message.role === "user";
+    const isError = message.isError;
+
+    return (
+      <View
+        key={message.id}
+        style={[
+          styles.messageContainer,
+          isUser ? styles.userMessage : styles.assistantMessage,
+        ]}
+      >
+        <View
+          style={[
+            styles.messageBubble,
+            isUser ? styles.userBubble : styles.assistantBubble,
+            isError && styles.errorBubble,
+          ]}
+        >
+          <Text
+            style={[
+              styles.messageText,
+              isUser ? styles.userText : styles.assistantText,
+              isError && styles.errorText,
+            ]}
+          >
+            {message.content}
+          </Text>
+
+          {isError && (
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={retryLastMessage}
+              disabled={isLoading}
+            >
+              <Text style={styles.retryButtonText}>
+                {isLoading ? "Göndərilir..." : "Yenidən cəhd et"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <Text style={styles.timestamp}>
+          {new Date(message.timestamp).toLocaleTimeString("az-AZ", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push("/settings");
+            }}
+            style={styles.headerButton}
+          >
+            <View style={styles.iconContainer}>
+              <Text style={styles.headerIcon}>⚙</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.titleContainer}>
+            <Image
+              source={require("../assets/images/icon.png")}
+              style={styles.appIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.headerTitle}>Yol Dostu</Text>
+          </View>
+          <TouchableOpacity onPress={startNewChat} style={styles.headerButton}>
+            <View style={styles.iconContainer}>
+              <Text style={styles.headerIcon}>+</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Messages */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.messagesContainer}
+          contentContainerStyle={styles.messagesContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.map((message, index) => renderMessage(message, index))}
+
+          {isLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#007AFF" />
+              <Text style={styles.loadingText}>
+                {retryCount > 0
+                  ? `Yenidən cəhd edilir... (${retryCount + 1}/3)`
+                  : "Cavab hazırlanır..."}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Input */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Sualınızı yazın..."
+            placeholderTextColor="#999"
+            multiline
+            maxLength={500}
+            editable={!isLoading}
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
+            ]}
+            onPress={() => sendMessage(inputText)}
+            disabled={!inputText.trim() || isLoading}
+          >
+            <Text
+              style={[
+                styles.sendButtonText,
+                (!inputText.trim() || isLoading) &&
+                  styles.sendButtonTextDisabled,
+              ]}
+            >
+              Göndər
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e5e7",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+  },
+  appIcon: {
+    width: 28,
+    height: 28,
+    marginRight: 8,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#1d1d1f",
+  },
+  headerButton: {
+    width: 48,
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#f2f2f7",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerIcon: {
+    fontSize: 22,
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  messagesContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  messagesContent: {
+    padding: 16,
+  },
+  messageContainer: {
+    marginBottom: 16,
+  },
+  userMessage: {
+    alignItems: "flex-end",
+  },
+  assistantMessage: {
+    alignItems: "flex-start",
+  },
+  messageBubble: {
+    maxWidth: "80%",
+    padding: 12,
+    borderRadius: 18,
+  },
+  userBubble: {
+    backgroundColor: "#007AFF",
+    borderBottomRightRadius: 4,
+  },
+  assistantBubble: {
+    backgroundColor: "#fff",
+    borderBottomLeftRadius: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  errorBubble: {
+    backgroundColor: "#ffebee",
+    borderColor: "#f44336",
+    borderWidth: 1,
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  userText: {
+    color: "#fff",
+  },
+  assistantText: {
+    color: "#333",
+  },
+  errorText: {
+    color: "#d32f2f",
+  },
+  timestamp: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 4,
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#f44336",
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: "#666",
+  },
+  inputContainer: {
+    flexDirection: "row",
+    padding: 16,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    alignItems: "flex-end",
+  },
+  textInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    maxHeight: 100,
+    marginRight: 12,
+    backgroundColor: "#f9f9f9",
+  },
+  sendButton: {
+    backgroundColor: "#007AFF",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sendButtonDisabled: {
+    backgroundColor: "#ccc",
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  sendButtonTextDisabled: {
+    color: "#999",
+  },
+});

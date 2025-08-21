@@ -378,7 +378,7 @@ export default function SettingsScreen() {
           <ScrollView style={styles.aboutContent}>
             <View style={styles.aboutSection}>
               <Text style={styles.aboutTitle}>Yol Dostu</Text>
-              <Text style={styles.aboutVersion}>Versiya 1.0.0</Text>
+              <Text style={styles.aboutVersion}>Versiya 2.0.0</Text>
             </View>
 
             <View style={styles.aboutSection}>

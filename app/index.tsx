@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
@@ -7,6 +8,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -44,6 +46,9 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [showReportMenu, setShowReportMenu] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -321,6 +326,30 @@ export default function ChatScreen() {
     );
   };
 
+  const handleReportChat = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowReportMenu(false);
+    setShowReportModal(true);
+  };
+
+  const confirmReportChat = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowReportModal(false);
+
+    // Show success notification
+    setShowSuccessNotification(true);
+
+    // Hide notification after 3 seconds
+    setTimeout(() => {
+      setShowSuccessNotification(false);
+    }, 3000);
+  };
+
+  const cancelReport = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowReportModal(false);
+  };
+
   const renderMessage = (message: Message, index: number) => {
     const isUser = message.role === "user";
     const isError = message.isError;
@@ -389,7 +418,7 @@ export default function ChatScreen() {
             style={styles.headerButton}
           >
             <View style={styles.iconContainer}>
-              <Text style={styles.headerIcon}>⚙</Text>
+              <Ionicons name="settings-outline" size={22} color="#007AFF" />
             </View>
           </TouchableOpacity>
           <View style={styles.titleContainer}>
@@ -400,12 +429,45 @@ export default function ChatScreen() {
             />
             <Text style={styles.headerTitle}>Yol Dostu</Text>
           </View>
-          <TouchableOpacity onPress={startNewChat} style={styles.headerButton}>
-            <View style={styles.iconContainer}>
-              <Text style={styles.headerIcon}>+</Text>
-            </View>
-          </TouchableOpacity>
+          <View style={styles.headerButtonsContainer}>
+            <TouchableOpacity
+              onPress={startNewChat}
+              style={styles.headerButton}
+            >
+              <View style={styles.iconContainer}>
+                <Ionicons name="add" size={24} color="#007AFF" />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowReportMenu(!showReportMenu);
+              }}
+              style={styles.headerButton}
+            >
+              <View style={styles.iconContainer}>
+                <Ionicons
+                  name="ellipsis-horizontal"
+                  size={22}
+                  color="#007AFF"
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Dropdown Menu - positioned absolutely */}
+        {showReportMenu && (
+          <View style={styles.dropdownMenu}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleReportChat}
+            >
+              <Ionicons name="warning" size={18} color="#d32f2f" />
+              <Text style={styles.menuItemText}>Söhbəti şikayət et</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Messages */}
         <ScrollView
@@ -459,6 +521,54 @@ export default function ChatScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Report Confirmation Modal */}
+        <Modal
+          visible={showReportModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={cancelReport}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <Text style={styles.modalTitle}>Söhbəti şikayət et</Text>
+              <Text style={styles.modalMessage}>
+                Bu söhbəti şikayət etmək istədiyinizə əminsiniz?
+              </Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={cancelReport}
+                >
+                  <Text style={styles.cancelButtonText}>Ləğv et</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmButton}
+                  onPress={confirmReportChat}
+                >
+                  <Text style={styles.confirmButtonText}>Şikayət et</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Success Notification */}
+        {showSuccessNotification && (
+          <View style={styles.successNotification}>
+            <Ionicons name="checkmark-circle" size={20} color="#fff" />
+            <Text style={styles.successText}>Şikayətiniz göndərildi</Text>
+          </View>
+        )}
+
+        {/* Overlay to close menu when clicking outside */}
+        {showReportMenu && (
+          <TouchableOpacity
+            style={styles.menuOverlay}
+            onPress={() => setShowReportMenu(false)}
+            activeOpacity={1}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -514,11 +624,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerIcon: {
-    fontSize: 22,
-    color: "#007AFF",
-    fontWeight: "600",
-  },
+
   messagesContainer: {
     flex: 1,
     backgroundColor: "#fff",
@@ -638,5 +744,134 @@ const styles = StyleSheet.create({
   },
   sendButtonTextDisabled: {
     color: "#999",
+  },
+  headerButtonsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  dropdownMenu: {
+    position: "absolute",
+    top: 80,
+    right: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 10,
+    minWidth: 180,
+    zIndex: 9999,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: "#d32f2f",
+    marginLeft: 8,
+    fontWeight: "500",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 32,
+    minWidth: 280,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#1d1d1f",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#f2f2f7",
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#666",
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#d32f2f",
+    alignItems: "center",
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  successNotification: {
+    position: "absolute",
+    top: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: "#4caf50",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1000,
+  },
+
+  successText: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  menuOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9998,
   },
 });

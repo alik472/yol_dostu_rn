@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -8,6 +9,7 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -83,9 +85,12 @@ export default function SettingsScreen() {
             if (isAvailable) {
               await StoreReview.requestReview();
             } else {
-              // Fallback to App Store URL
-              const appStoreUrl = "https://apps.apple.com/app/idYOUR_APP_ID"; // Replace with actual App Store URL
-              await Linking.openURL(appStoreUrl);
+              // Platform-specific fallback URLs
+              const storeUrl =
+                Platform.OS === "ios"
+                  ? "https://apps.apple.com/app/yol-dostu/id6738139474" // iOS App Store
+                  : "https://play.google.com/store/apps/details?id=com.yoldostu.alik472"; // Google Play Store
+              await Linking.openURL(storeUrl);
             }
             await AsyncStorage.setItem("reviewPromptShown", "true");
           } catch (error) {
@@ -213,7 +218,7 @@ export default function SettingsScreen() {
             style={styles.headerButton}
           >
             <View style={styles.iconContainer}>
-              <Text style={styles.backIcon}>←</Text>
+              <Ionicons name="chevron-back" size={24} color="#007AFF" />
             </View>
           </TouchableOpacity>
           <View style={styles.headerSpacer} />
@@ -281,12 +286,12 @@ export default function SettingsScreen() {
           >
             <View style={styles.settingLeft}>
               <View style={styles.settingIconContainer}>
-                <Text style={styles.settingIcon}>⭐</Text>
+                <Ionicons name="star" size={18} color="#FFD700" />
               </View>
               <View style={styles.settingTextContainer}>
                 <Text style={styles.settingText}>Tətbiqi qiymətləndir</Text>
                 <Text style={styles.settingSubtext}>
-                  App Store-da rəy yazın
+                  Rəy yazın və qiymətləndirin
                 </Text>
               </View>
             </View>
@@ -296,7 +301,7 @@ export default function SettingsScreen() {
 
         {/* Version Info */}
         <View style={styles.versionSection}>
-          <Text style={styles.versionText}>Versiya 1.0.0</Text>
+          <Text style={styles.versionText}>Versiya 3.0.0</Text>
         </View>
 
         {/* Developer Credit */}
@@ -364,7 +369,7 @@ export default function SettingsScreen() {
           <ScrollView style={styles.aboutContent}>
             <View style={styles.aboutSection}>
               <Text style={styles.aboutTitle}>Yol Dostu</Text>
-              <Text style={styles.aboutVersion}>Versiya 2.0.0</Text>
+              <Text style={styles.aboutVersion}>Versiya 3.0.0</Text>
             </View>
 
             <View style={styles.aboutSection}>
@@ -400,8 +405,8 @@ export default function SettingsScreen() {
             <View style={styles.aboutSection}>
               <Text style={styles.aboutSectionTitle}>Əlaqə</Text>
               <Text style={styles.aboutText}>
-                Təkliflər və şikayətlər üçün App Store-da rəy yazın və ya
-                tətbiqi qiymətləndirin.
+                Təkliflər və şikayətlər üçün tətbiqi qiymətləndirin və ya rəy
+                yazın.
               </Text>
             </View>
           </ScrollView>
@@ -451,11 +456,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  backIcon: {
-    fontSize: 22,
-    color: "#007AFF",
-    fontWeight: "600",
-  },
+
   logoSection: {
     backgroundColor: "#fff",
     paddingVertical: 40,
